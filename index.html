@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Crimson Spider Lily Garden</title>
+<style>
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#050505;font-family:system-ui}
+#cam,#fx{position:fixed;inset:0;width:100%;height:100%;object-fit:cover}
+#cam{filter:grayscale(1) contrast(1.15) brightness(.72);transform:scaleX(-1)}
+#fx{transform:scaleX(-1);pointer-events:none}
+#bar{position:fixed;top:12px;left:12px;right:12px;z-index:5;display:flex;gap:8px;align-items:center}
+button{border:0;border-radius:20px;padding:10px 14px;background:#fff;color:#111;font-weight:600}
+#state{color:#fff;background:#0009;border-radius:20px;padding:9px 12px;font-size:13px}
+</style>
+</head>
+<body>
+<video id="cam" autoplay muted playsinline></video>
+<canvas id="fx"></canvas>
+<div id="bar"><button id="go">Start camera</button><button id="clear">Clear</button><span id="state">Ready</span></div>
+
+<script type="module">
+import {FilesetResolver, HandLandmarker} from
+"https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/+esm";
+
+const video=document.querySelector("#cam"), c=document.querySelector("#fx"), x=c.getContext("2d");
+const state=document.querySelector("#state");
+let tracker, stream, flowers=[], last=-1, lastBloom=0;
+
+function size(){c.width=innerWidth*devicePixelRatio;c.height=innerHeight*devicePixelRatio;c.style.width=innerWidth+"px";c.style.height=innerHeight+"px";x.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0)}
+addEventListener("resize",size); size();
+
+function addFlower(px,py){
+  flowers.push({x:px,y:py,t:performance.now(),rot:Math.random()*6.28,s:18+Math.random()*12});
+  if(flowers.length>42) flowers.shift();
+}
+
+function lily(f,now){
+  let q=Math.min(1,(now-f.t)/700), grow=.15+.85*q;
+  x.save(); x.translate(f.x,f.y); x.rotate(f.rot);
+  x.globalAlpha=Math.min(1,q*1.5);
+  x.strokeStyle="#8d0b20"; x.lineWidth=2;
+  x.beginPath();x.moveTo(0,8);x.quadraticCurveTo(-4,30,0,62);x.stroke();
+  x.fillStyle="#8f1528";
+  x.beginPath();x.ellipse(-8,38,10,4,-.45,0,6.28);x.ellipse(7,48,10,4,.45,0,6.28);x.fill();
+
+  // Original spider-lily-like silhouette: six curved crimson petals + fine stamens
+  for(let i=0;i<6;i++){
+    let a=i*Math.PI/3;
+    x.save();x.rotate(a);
+    x.beginPath();
+    x.moveTo(0,0);
+    x.bezierCurveTo(-f.s*.9*grow,-f.s*.8*grow,-f.s*.9*grow,-f.s*1.8*grow,0,-f.s*2.15*grow);
+    x.bezierCurveTo(f.s*.9*grow,-f.s*1.8*grow,f.s*.9*grow,-f.s*.8*grow,0,0);
+    x.fillStyle=i%2?"#b10d2b":"#d31338";x.fill();
+    x.strokeStyle="#f04b63";x.stroke();
+    x.beginPath();x.moveTo(0,-f.s*.2);x.quadraticCurveTo(f.s*.9,-f.s*1.2,f.s*.2,-f.s*2.1);
+    x.strokeStyle="#ff7a8c";x.stroke();
+    x.restore();
+  }
+  x.strokeStyle="#ffb1bd";x.lineWidth=1.2;
+  for(let i=0;i<12;i++){
+    let a=i*Math.PI/6, len=f.s*(1.4+.4*Math.sin(i));
+    x.beginPath();x.moveTo(0,0);x.quadraticCurveTo(Math.cos(a)*len*.7,Math.sin(a)*len*.7,Math.cos(a)*len,Math.sin(a)*len);x.stroke();
+    x.fillStyle="#ffd3d8";x.beginPath();x.arc(Math.cos(a)*len,Math.sin(a)*len,1.8,0,6.28);x.fill();
+  }
+  x.restore();
+}
+
+async function init(){
+ state.textContent="Loading hand tracking…";
+ const vision=await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm");
+ tracker=await HandLandmarker.createFromOptions(vision,{
+  baseOptions:{modelAssetPath:"https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",delegate:"GPU"},
+  runningMode:"VIDEO",numHands:2
+ });
+}
+async function start(){
+ try{
+  if(!tracker)await init();
+  stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:"user",width:{ideal:1280},height:{ideal:720}},audio:false});
+  video.srcObject=stream; await video.play(); state.textContent="Hands tracked ✓"; requestAnimationFrame(loop);
+ }catch(e){state.textContent="Camera error";alert("Allow camera access, then reload this page.");console.error(e)}
+}
+function loop(now){
+ if(video.readyState>=2 && video.currentTime!==last){
+  let r=tracker.detectForVideo(video,performance.now());last=video.currentTime;
+  for(const hand of (r.landmarks||[])){
+   const p=hand[8], px=(1-p.x)*innerWidth, py=p.y*innerHeight;
+   if(now-lastBloom>220){addFlower(px,py);lastBloom=now}
+   x.beginPath();x.arc(px,py,5,0,6.28);x.fillStyle="#fff";x.fill();
+  }
+ }
+ for(const f of flowers)lily(f,now);
+ requestAnimationFrame(loop);
+}
+document.querySelector("#go").onclick=start;
+document.querySelector("#clear").onclick=()=>flowers=[];
+</script>
+</body></html>
